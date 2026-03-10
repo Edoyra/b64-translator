@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>B64 Translator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --border: #1f1f1f;
+      --accent: #00ff88;
+      --accent-dim: rgba(0,255,136,0.12);
+      --accent-glow: 0 0 16px rgba(0,255,136,0.4);
+      --text: #e8e8e8;
+      --muted: #555;
+      --error: #ff4d6d;
+      --mono: 'Share Tech Mono', monospace;
+      --sans: 'Rajdhani', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Scanline overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.07) 2px,
+        rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    header {
+      width: 100%;
+      max-width: 1100px;
+      padding: 40px 24px 20px;
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+
+    .logo {
+      font-family: var(--mono);
+      font-size: 2rem;
+      color: var(--accent);
+      text-shadow: var(--accent-glow);
+      letter-spacing: -1px;
+    }
+
+    .logo span { color: var(--muted); }
+    .tagline { font-size: 0.85rem; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; }
+
+    /* Mode Toggle */
+    .mode-bar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 0 24px 28px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 12px 40px;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.9rem;
+      letter-spacing: 2px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-btn.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+      text-shadow: var(--accent-glow);
+    }
+
+    .mode-btn:hover:not(.active) { color: var(--text); background: #1a1a1a; }
+
+    /* Main layout */
+    .main {
+      width: 100%;
+      max-width: 1100px;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 1fr 80px 1fr;
+      gap: 0;
+      align-items: start;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-label {
+      font-size: 0.7rem;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding-left: 2px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 320px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      line-height: 1.7;
+      padding: 16px;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus { border-color: var(--accent); }
+    textarea::placeholder { color: var(--muted); }
+    #output { color: var(--accent); }
+
+    .char-count {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    /* Center column */
+    .center-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding-top: 52px;
+      gap: 12px;
+    }
+
+    .translate-btn {
+      width: 56px;
+      height: 56px;
+      background: var(--accent);
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      box-shadow: var(--accent-glow);
+    }
+
+    .translate-btn:hover {
+      transform: scale(1.1);
+      box-shadow: 0 0 28px rgba(0,255,136,0.6);
+    }
+
+    .translate-btn:active { transform: scale(0.95); }
+
+    .translate-btn svg { fill: #000; width: 22px; height: 22px; }
+
+    /* Output actions */
+    .output-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-small {
+      flex: 1;
+      padding: 9px 12px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      letter-spacing: 1px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-small:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-small.copied {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    /* Error / status */
+    .status {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      min-height: 20px;
+      padding: 0 2px;
+      transition: opacity 0.3s;
+    }
+
+    .status.error { color: var(--error); }
+    .status.ok { color: var(--accent); }
+
+    /* Fade animation on output */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .fade-in { animation: fadeIn 0.3s ease forwards; }
+
+    footer {
+      margin-top: auto;
+      padding: 32px 24px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 2px;
+    }
+
+    @media (max-width: 700px) {
+      .main { grid-template-columns: 1fr; }
+      .center-col { flex-direction: row; padding: 0; justify-content: center; }
+      .translate-btn { width: 44px; height: 44px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">B64<span>//</span>TRANSLATOR</div>
+  <div class="tagline">encode · decode · base64</div>
+</header>
+
+<div class="mode-bar">
+  <button class="mode-btn active" id="encodeBtn" onclick="setMode('encode')">[ ENCODE ]</button>
+  <button class="mode-btn" id="decodeBtn" onclick="setMode('decode')">[ DECODE ]</button>
+</div>
+
+<div class="main">
+  <!-- Input Panel -->
+  <div class="panel">
+    <div class="panel-label" id="inputLabel">PLAIN TEXT INPUT</div>
+    <textarea id="input" placeholder="Type or paste your text here..." oninput="updateCount()"></textarea>
+    <div class="char-count"><span id="inputCount">0</span> chars</div>
+  </div>
+
+  <!-- Center -->
+  <div class="center-col">
+    <button class="translate-btn" onclick="translateText()" title="Translate">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 5l7 7-7 7" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Output Panel -->
+  <div class="panel">
+    <div class="panel-label" id="outputLabel">BASE64 OUTPUT</div>
+    <textarea id="output" placeholder="Result will appear here..." readonly></textarea>
+    <div class="char-count"><span id="outputCount">0</span> chars</div>
+    <div class="output-actions">
+      <button class="btn-small" id="copyBtn" onclick="copyOutput()">COPY</button>
+      <button class="btn-small" onclick="clearAll()">CLEAR</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+</div>
+
+<footer>// B64 TRANSLATOR — NGINX + FLASK — MIT LICENSE</footer>
+
+<script>
+  let mode = 'encode';
+
+  function setMode(m) {
+    mode = m;
+    document.getElementById('encodeBtn').classList.toggle('active', m === 'encode');
+    document.getElementById('decodeBtn').classList.toggle('active', m === 'decode');
+    document.getElementById('inputLabel').textContent  = m === 'encode' ? 'PLAIN TEXT INPUT'  : 'BASE64 INPUT';
+    document.getElementById('outputLabel').textContent = m === 'encode' ? 'BASE64 OUTPUT'     : 'PLAIN TEXT OUTPUT';
+    document.getElementById('input').placeholder       = m === 'encode' ? 'Type or paste your text here...' : 'Paste Base64 string here...';
+    clearAll();
+  }
+
+  function updateCount() {
+    const val = document.getElementById('input').value;
+    document.getElementById('inputCount').textContent = val.length;
+  }
+
+  async function translateText() {
+    const input = document.getElementById('input').value.trim();
+    const statusEl = document.getElementById('status');
+    const outputEl = document.getElementById('output');
+
+    if (!input) { setStatus('error', '⚠ Input is empty'); return; }
+
+    setStatus('ok', '// processing...');
+
+    try {
+      const res = await fetch(`/api/${mode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: input })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        outputEl.classList.remove('fade-in');
+        void outputEl.offsetWidth; // reflow
+        outputEl.classList.add('fade-in');
+        outputEl.value = data.result;
+        document.getElementById('outputCount').textContent = data.result.length;
+        setStatus('ok', `✓ ${mode === 'encode' ? 'Encoded' : 'Decoded'} successfully`);
+      } else {
+        outputEl.value = '';
+        document.getElementById('outputCount').textContent = 0;
+        setStatus('error', `✗ ${data.error}`);
+      }
+    } catch (err) {
+      setStatus('error', '✗ Connection error — is the server running?');
+    }
+  }
+
+  function setStatus(type, msg) {
+    const el = document.getElementById('status');
+    el.className = `status ${type}`;
+    el.textContent = msg;
+  }
+
+  async function copyOutput() {
+    const val = document.getElementById('output').value;
+    if (!val) return;
+    await navigator.clipboard.writeText(val);
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'COPIED!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'COPY'; btn.classList.remove('copied'); }, 1500);
+  }
+
+  function clearAll() {
+    document.getElementById('input').value = '';
+    document.getElementById('output').value = '';
+    document.getElementById('inputCount').textContent = 0;
+    document.getElementById('outputCount').textContent = 0;
+    document.getElementById('status').textContent = '';
+  }
+
+  // Allow Ctrl+Enter to translate
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') translateText();
+  });
+</script>
+</body>
+</html>
