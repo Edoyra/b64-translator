@@ -5,40 +5,78 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
-  workflow_dispatch:          # ← add this so you can trigger manually
+  workflow_dispatch:
 
 jobs:
-  build-test:
+  # ─────────────────────────────
+  # JOB 1: BUILD & TEST (Docker)
+  # ─────────────────────────────
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.2'
-          extensions: mbstring, pdo, pdo_mysql, pdo_sqlite   # ← add pdo_sqlite
-          coverage: xdebug
+      - name: Build Docker Compose
+        run: docker compose build
 
-      - name: Install dependencies
-        run: composer install --no-interaction --prefer-dist
+      - name: Start services
+        run: docker compose up -d
 
-      - name: Copy .env
-        run: cp .env.example .env
+      - name: Wait for services to be ready
+        run: sleep 10
 
-      - name: Generate app key
-        run: php artisan key:generate
+      - name: Health check - Nginx
+        run: curl -f http://localhost || exit 1
 
-      - name: Set SQLite database for testing        # ← add this
+      - name: Health check - Flask API
+        run: curl -f http://localhost/api/ || exit 1
+
+      - name: Test encode endpoint
         run: |
-          touch database/database.sqlite
-          echo "DB_CONNECTION=sqlite" >> .env
-          echo "DB_DATABASE=$(pwd)/database/database.sqlite" >> .env
+          curl -f -X POST http://localhost/api/encode \
+            -H "Content-Type: application/json" \
+            -d '{"text": "hello"}' || exit 1
 
-      - name: Run migrations
-        run: php artisan migrate --force
+      - name: Test decode endpoint
+        run: |
+          curl -f -X POST http://localhost/api/decode \
+            -H "Content-Type: application/json" \
+            -d '{"text": "aGVsbG8="}' || exit 1
 
-      - name: Run tests
-        run: php artisan test --coverage --min=80
+      - name: Show logs if failed
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down containers
+        if: always()
+        run: docker compose down
+
+  # ─────────────────────────────
+  # JOB 2: CODEQL SECURITY SCAN
+  # ─────────────────────────────
+  codeql:
+    name: CodeQL Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
