@@ -29,22 +29,40 @@ jobs:
         run: sleep 10
 
       - name: Health check - Nginx
-        run: curl -f http://localhost || exit 1
+        run: curl -f http://localhost:8080 || exit 1
 
       - name: Health check - Flask API
-        run: curl -f http://localhost/api/ || exit 1
+        run: curl -f http://localhost:8080/api/health || exit 1
 
       - name: Test encode endpoint
         run: |
-          curl -f -X POST http://localhost/api/encode \
+          RESULT=$(curl -s -X POST http://localhost:8080/api/encode \
             -H "Content-Type: application/json" \
-            -d '{"text": "hello"}' || exit 1
+            -d '{"text": "hello"}')
+          echo "Encode result: $RESULT"
+          echo $RESULT | grep -q '"success":true' || exit 1
 
       - name: Test decode endpoint
         run: |
-          curl -f -X POST http://localhost/api/decode \
+          RESULT=$(curl -s -X POST http://localhost:8080/api/decode \
             -H "Content-Type: application/json" \
-            -d '{"text": "aGVsbG8="}' || exit 1
+            -d '{"text": "aGVsbG8="}')
+          echo "Decode result: $RESULT"
+          echo $RESULT | grep -q '"success":true' || exit 1
+
+      - name: Test decode returns correct value
+        run: |
+          RESULT=$(curl -s -X POST http://localhost:8080/api/decode \
+            -H "Content-Type: application/json" \
+            -d '{"text": "aGVsbG8="}')
+          echo $RESULT | grep -q '"result":"hello"' || exit 1
+
+      - name: Test missing field returns error
+        run: |
+          RESULT=$(curl -s -X POST http://localhost:8080/api/encode \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo $RESULT | grep -q '"success":false' || exit 1
 
       - name: Show logs if failed
         if: failure()
@@ -70,13 +88,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: python
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
